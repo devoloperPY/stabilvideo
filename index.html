@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StabilizeFlow Local - Pro Dashboard</title>
+    
+    <script src="./tailwind.js"></script>
+    <script src="./ffmpeg.min.js"></script>
+
+    <style>
+        :root { --bg-dark: #030712; --card-bg: #111827; --accent: #6366f1; --success: #22c55e; --error: #ef4444; }
+        
+        body { 
+            background-color: var(--bg-dark); 
+            color: #f3f4f6; 
+            font-family: system-ui, -apple-system, sans-serif;
+            background-image: 
+                linear-gradient(rgba(99, 102, 241, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(99, 102, 241, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .terminal {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 11px;
+            line-height: 1.6;
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        .state-idle { border-color: rgba(255,255,255,0.1); }
+        .state-processing { border-color: var(--accent); box-shadow: 0 0 20px rgba(99, 102, 241, 0.2); }
+        .state-success { border-color: var(--success); box-shadow: 0 0 20px rgba(34, 197, 94, 0.2); }
+        .state-error { border-color: var(--error); box-shadow: 0 0 20px rgba(239, 68, 68, 0.2); }
+
+        @keyframes scan { 0% { background-position: 0% 0%; } 100% { background-position: 100% 100%; } }
+        .scanning { background: linear-gradient(45deg, transparent 40%, rgba(99,102,241,0.2) 50%, transparent 60%); background-size: 200% 200%; animation: scan 2s linear infinite; }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8 overflow-x-hidden">
+
+    <div class="max-w-7xl mx-auto space-y-6">
+        
+        <header class="flex justify-between items-center py-4 border-b border-white/10">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-bold tracking-tight text-white">Stabilize<span class="text-indigo-400">Flow</span> <span class="text-[10px] bg-white/10 px-2 py-0.5 rounded text-slate-400 border border-white/5">LOCAL CORE</span></h1>
+                </div>
+            </div>
+            
+            <div id="engine-badge" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-700 text-xs font-mono text-slate-400">
+                <span class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
+                BOOTING KERNEL...
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <div class="lg:col-span-4 space-y-6">
+                <div class="glass-panel p-6 relative group overflow-hidden">
+                    <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Source Footage</h3>
+                    <input type="file" id="uploader" accept="video/*" class="absolute inset-0 w-full h-full opacity-0 z-20 cursor-pointer" disabled>
+                    
+                    <div id="drop-zone" class="border-2 border-dashed border-slate-700 rounded-xl p-8 text-center transition-all group-hover:border-indigo-500 group-hover:bg-indigo-500/5">
+                        <div id="icon-upload" class="text-4xl mb-3 opacity-50">📁</div>
+                        <p id="label-upload" class="text-sm font-medium text-slate-300">Tunggu Engine Siap...</p>
+                        <p class="text-[10px] text-slate-500 mt-2">MP4 / MOV / WEBM</p>
+                    </div>
+                </div>
+
+                <div class="glass-panel p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <label class="text-sm font-bold text-slate-400 uppercase tracking-wider">Stabilization Level</label>
+                        <span id="smooth-val" class="text-indigo-400 font-mono font-bold bg-indigo-500/10 px-2 py-1 rounded">10</span>
+                    </div>
+                    <input type="range" id="smoothness" min="1" max="30" value="10" class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    <p class="text-[10px] text-slate-500 mt-3">*Semakin tinggi nilainya, video makin stabil tapi zoom-in makin besar.</p>
+                </div>
+
+                <button id="run-btn" disabled class="w-full py-4 bg-gradient-to-r from-indigo-600 to-violet-600 rounded-xl font-bold text-white shadow-xl shadow-indigo-600/20 hover:shadow-indigo-600/40 transform hover:-translate-y-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:transform-none">
+                    START PROCESS
+                </button>
+
+                <div class="glass-panel p-4 flex justify-between items-center">
+                    <div>
+                        <p class="text-[10px] text-slate-500 uppercase">Input Size</p>
+                        <p id="meta-size" class="font-mono text-sm">0.00 MB</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-[10px] text-slate-500 uppercase">Status</p>
+                        <p id="meta-status" class="font-mono text-sm text-yellow-500">IDLE</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-8 space-y-6">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="space-y-2">
+                        <div class="flex justify-between px-1">
+                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">ORIGINAL (SHAKY)</span>
+                        </div>
+                        <div class="aspect-video bg-black rounded-xl border border-white/10 overflow-hidden relative">
+                            <video id="vid-in" controls class="w-full h-full object-contain"></video>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <div class="flex justify-between px-1">
+                            <span class="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">RESULT (STABLE)</span>
+                            <span id="badge-dl" class="hidden text-[10px] bg-emerald-500 text-black font-bold px-1.5 rounded">READY</span>
+                        </div>
+                        <div id="output-container" class="aspect-video bg-black rounded-xl border border-white/10 overflow-hidden relative transition-all duration-300">
+                            <video id="vid-out" controls class="w-full h-full object-contain"></video>
+                            
+                            <div id="loading-overlay" class="hidden absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-10">
+                                <div class="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                                <p class="text-indigo-400 font-bold animate-pulse">RENDERING...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="monitor-panel" class="glass-panel p-0 overflow-hidden border-l-4 border-slate-700 transition-colors duration-500">
+                    <div class="p-6 pb-2">
+                        <div class="flex justify-between items-end mb-2">
+                            <h3 class="text-xs font-bold text-slate-400 uppercase">System Monitor</h3>
+                            <h2 id="progress-text" class="text-4xl font-bold font-mono text-slate-700">0<span class="text-lg text-slate-600">%</span></h2>
+                        </div>
+                        <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
+                            <div id="progress-bar" class="h-full w-0 bg-indigo-500 transition-all duration-300 ease-out shadow-[0_0_15px_rgba(99,102,241,0.6)]"></div>
+                        </div>
+                    </div>
+
+                    <div class="bg-black/50 p-4 h-48 overflow-y-auto terminal border-t border-white/5 space-y-1" id="terminal">
+                        <div class="text-slate-500">>> System initialized. Waiting for core...</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        const ffmpeg = createFFmpeg({ 
+            log: true, 
+            corePath: './ffmpeg-core.js' 
+        });
+
+        const uploader = document.getElementById('uploader');
+        const runBtn = document.getElementById('run-btn');
+        const terminal = document.getElementById('terminal');
+        const badge = document.getElementById('engine-badge');
+        const dropZone = document.getElementById('drop-zone');
+        const monitorPanel = document.getElementById('monitor-panel');
+        
+        const log = (msg, type = 'info') => {
+            const div = document.createElement('div');
+            const time = new Date().toLocaleTimeString('id-ID', {hour12: false});
+            
+            let color = 'text-slate-400';
+            let prefix = '>>';
+
+            if(type === 'success') { color = 'text-emerald-400'; prefix = '✅'; }
+            if(type === 'error') { color = 'text-red-400'; prefix = '❌'; }
+            if(type === 'warn') { color = 'text-yellow-400'; prefix = '⚠️'; }
+            if(type === 'system') { color = 'text-indigo-400'; prefix = '⚙️'; }
+
+            div.className = `${color} border-l-2 border-transparent pl-2 hover:bg-white/5 hover:border-white/10`;
+            div.innerHTML = `<span class="opacity-50 mr-2">[${time}]</span> <span class="font-bold mr-2">${prefix}</span> ${msg}`;
+            terminal.appendChild(div);
+            terminal.scrollTop = terminal.scrollHeight;
+        };
+
+        (async () => {
+            try {
+                log('Memuat Engine Lokal (ffmpeg-core.js)...', 'system');
+                await ffmpeg.load();
+                
+                badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]"></span> ENGINE READY`;
+                badge.classList.replace('border-slate-700', 'border-emerald-500/30');
+                badge.classList.replace('text-slate-400', 'text-emerald-400');
+                
+                uploader.disabled = false;
+                document.getElementById('label-upload').innerText = "Klik atau Tarik Video ke Sini";
+                document.getElementById('drop-zone').classList.remove('opacity-50');
+                
+                log('Engine Siap! Silakan upload video.', 'success');
+            } catch (err) {
+                console.error(err);
+                badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-500"></span> LOAD FAILED`;
+                badge.classList.add('text-red-500', 'border-red-500');
+                log('GAGAL MEMUAT ENGINE!', 'error');
+                log('Pastikan 3 file (ffmpeg.min.js, core.js, core.wasm) ada di folder ini.', 'error');
+                if(err.message.includes("SharedArrayBuffer")) {
+                    log('Masalah Security Browser terdeteksi (SharedArrayBuffer).', 'warn');
+                }
+            }
+        })();
+
+        uploader.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            document.getElementById('vid-in').src = URL.createObjectURL(file);
+            document.getElementById('meta-size').innerText = (file.size / (1024 * 1024)).toFixed(2) + " MB";
+            document.getElementById('label-upload').innerText = file.name;
+            document.getElementById('icon-upload').innerText = "🎬";
+            
+            dropZone.classList.add('border-indigo-500', 'bg-indigo-500/10');
+            runBtn.disabled = false;
+            
+            log(`Video dimuat: ${file.name}`, 'info');
+        });
+
+        runBtn.addEventListener('click', async () => {
+            if (!ffmpeg.isLoaded()) return;
+
+            const file = uploader.files[0];
+            const smoothVal = document.getElementById('smoothness').value;
+            
+            runBtn.disabled = true;
+            uploader.disabled = true;
+            document.getElementById('loading-overlay').classList.remove('hidden');
+            document.getElementById('meta-status').innerText = "PROCESSING";
+            document.getElementById('meta-status').className = "font-mono text-sm text-indigo-400 animate-pulse";
+            
+            monitorPanel.classList.remove('border-slate-700', 'border-emerald-500', 'border-red-500');
+            monitorPanel.classList.add('border-indigo-500'); 
+            
+            try {
+                log('Menulis file ke memori virtual...', 'system');
+                ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(file));
+
+                ffmpeg.setProgress(({ ratio }) => {
+                    const p = Math.floor(ratio * 100);
+                    if(p >= 0 && p <= 100) {
+                        document.getElementById('progress-text').innerHTML = `${p}<span class="text-lg text-slate-600">%</span>`;
+                        document.getElementById('progress-bar').style.width = `${p}%`;
+                        
+                        const txt = document.getElementById('progress-text');
+                        if(p < 30) txt.className = "text-4xl font-bold font-mono text-slate-500";
+                        else if(p < 70) txt.className = "text-4xl font-bold font-mono text-indigo-400";
+                        else txt.className = "text-4xl font-bold font-mono text-emerald-400";
+                    }
+                });
+
+                log('Tahap 1/2: Analisis Vektor Gerakan (Detection)...', 'system');
+                await ffmpeg.run('-i', 'input.mp4', '-vf', 'vidstabdetect=stepsize=32:shakiness=10:accuracy=10:result=transform.trf', '-f', 'null', '-');
+
+                log(`Tahap 2/2: Stabilisasi (Smoothness: ${smoothVal})...`, 'system');
+                await ffmpeg.run('-i', 'input.mp4', '-vf', `vidstabtransform=input=transform.trf:zoom=0:smoothing=${smoothVal}`, '-vcodec', 'libx264', '-preset', 'ultrafast', '-tune', 'film', '-crf', '25', '-acodec', 'copy', 'output.mp4');
+
+                log('Membaca hasil video...', 'system');
+                const data = ffmpeg.FS('readFile', 'output.mp4');
+
+                const videoBlob = new Blob([data.buffer], { type: 'video/mp4' });
+                const videoUrl = URL.createObjectURL(videoBlob);
+                document.getElementById('vid-out').src = videoUrl;
+                
+                document.getElementById('loading-overlay').classList.add('hidden');
+                document.getElementById('meta-status').innerText = "COMPLETED";
+                document.getElementById('meta-status').className = "font-mono text-sm text-emerald-400";
+                document.getElementById('badge-dl').classList.remove('hidden');
+                
+                monitorPanel.classList.remove('border-indigo-500');
+                monitorPanel.classList.add('border-emerald-500'); 
+                
+                log('🎉 PROSES BERHASIL! Video siap diputar.', 'success');
+                
+                ffmpeg.FS('unlink', 'input.mp4');
+                ffmpeg.FS('unlink', 'transform.trf');
+                ffmpeg.FS('unlink', 'output.mp4');
+
+            } catch (error) {
+                console.error(error);
+                log(`ERROR: ${error.message}`, 'error');
+                
+                document.getElementById('loading-overlay').classList.add('hidden');
+                document.getElementById('meta-status').innerText = "FAILED";
+                document.getElementById('meta-status').className = "font-mono text-sm text-red-400";
+                
+                monitorPanel.classList.remove('border-indigo-500');
+                monitorPanel.classList.add('border-red-500'); 
+            } finally {
+                runBtn.disabled = false;
+                uploader.disabled = false;
+            }
+        });
+
+        document.getElementById('smoothness').addEventListener('input', function() {
+            document.getElementById('smooth-val').innerText = this.value;
+        });
+
+    </script>
+</body>
+</html>
